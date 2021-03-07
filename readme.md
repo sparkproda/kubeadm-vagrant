@@ -1,4 +1,4 @@
-# Using Vagrant and Ansible to Kubeadm 
+# Using Vagrant and Ansible to Create a Kubernetes Cluster(Using Kubeadm)
 
 Vagrant를 사용하여 Virtualbox VM을 만들고 Ansible을 사용하여 Kubernetes 설치를 자동화함으로써 클러스터를 실행하는 방법을 설명 드립니다. 사전 준비 사항으로서 VirtualBox, Vagrant 및 Ansible을 로컬 머신에 사전에 설치하셔야 합니다.
 

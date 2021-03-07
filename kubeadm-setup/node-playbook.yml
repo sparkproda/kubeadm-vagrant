@@ -1,0 +1,193 @@
+---
+- hosts: all
+  gather_facts: no
+  become: true
+  vars:
+    pod_network_cidr: 172.16.0.0/16
+    service_cidr: 172.17.0.0/16
+    username: vagrant
+
+  tasks:
+    - name: 'Disable SWAP since kubernetes cant work with swap enabled '
+      shell: |
+        swapoff -a    
+        modprobe overlay
+        modprobe br_netfilter
+
+
+    - name: Update and upgrade apt package
+      apt:
+        upgrade: yes
+        update_cache: yes
+        cache_valid_time: 86400 #One day
+
+    - name: install extra packages
+      apt:
+        name: "{{ item }}"
+        update_cache: yes
+        state: present
+      with_items:
+        - 'apt-transport-https' 
+        - 'ca-certificates' 
+        - 'curl' 
+        - 'software-properties-common'
+        - 'gnupg2'
+
+    - name: Add Docker GPG key
+      apt_key: 
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: create repo line
+      command: bash -c "echo \"deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\" "
+      register: docker_repo_line
+   
+    - debug: 
+        msg: "{{ docker_repo_line.stdout }}"
+
+    - name: add docker repo
+      apt_repository:
+        repo: "{{ docker_repo_line.stdout }}"
+        state: present
+
+
+    - name: Register distribution *short* code name
+      shell: lsb_release -cs
+      register: lsb_release
+
+    - name: remove possible old versions
+      apt:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - docker 
+        - docker-engine 
+        - docker.io
+
+    - name: Install docker and dependecies
+      apt: 
+        name: "{{ packages }}"
+        state: present
+        force: True
+        update_cache: yes
+      vars:
+        packages:
+          - 'containerd.io=1.2.13-2' 
+          - 'docker-ce=5:19.03.11~3-0~ubuntu-{{ lsb_release.stdout }}' 
+          - 'docker-ce-cli=5:19.03.11~3-0~ubuntu-{{ lsb_release.stdout }}'
+      notify:
+        - docker restarted
+
+    - name: Restart docker
+      systemd:
+        name: docker
+        daemon_reload: True
+        state: restarted
+
+    - name: Set native.cgroupdriver=systemd
+      blockinfile:
+        path: /etc/docker/daemon.json
+        create: yes
+        marker: ''
+        block: |
+         {
+          "exec-opts": ["native.cgroupdriver=systemd"],
+          "log-driver": "json-file",
+          "log-opts": {
+           "max-size": "100m"
+           },
+          "storage-driver": "overlay2",
+          "storage-opts": [
+          "overlay2.override_kernel_check=true"
+          ]
+         }
+
+    - name: Restart docker
+      systemd:
+        name: docker
+        daemon_reload: True
+        state: restarted
+
+    - name: Set vagrant user in docker group
+      user:
+        name: vagrant
+        group: docker
+
+    - name: Disable iptables
+      shell: |
+        echo "net.bridge.bridge-nf-call-iptables=1" >> /etc/sysctl.conf
+        echo "net.bridge.bridge-nf-call-ip6tables=1" >> /etc/sysctl.conf
+        echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+        sysctl --system  
+
+    - name: Add Kubernetes GPG key
+      apt_key: 
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - name: apt repository Kubernetes
+      apt_repository:
+        repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+        filename: kubernetes.list  
+
+    - name: Install Kubernetes
+      apt: 
+        name: "{{ packages }}"
+        state: present
+        force: True
+        update_cache: yes
+      vars:
+        packages:
+          - 'kubelet' 
+          - 'kubeadm' 
+          - 'kubectl'
+
+    - name: Prevent Kubernetes from being upgraded
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - 'kubelet' 
+        - 'kubeadm' 
+        - 'kubectl'
+
+    - name: Save IP eth1 addr
+      shell: ifconfig eth1 | grep 'inet' | cut -d{{':'}} -f2 | awk '{ print $2 }'
+      register: output
+
+    - debug: 
+        msg: "{{ output.stdout }}"
+
+
+    - name: Restart kubelet
+      systemd:
+        name: kubelet
+        daemon_reload: yes
+        state: restarted
+        enabled: yes
+
+
+    - name: Save hostname
+      shell: hostname -s
+      register: hostname_output
+
+    - debug: 
+        msg: "{{ hostname_output.stdout }}"
+
+    - name: Copy the join command to server location
+      copy: 
+        src: /home/vagrant/sync/join-command 
+        dest: /tmp/join-command.sh 
+        mode: 0777  
+        remote_src: yes
+
+    - name: Join the node to cluster
+      command: sh /tmp/join-command.sh  
+
+  handlers:
+  - name: docker restarted
+    systemd:
+      name: docker
+      daemon_reload: True
+      state: restarted

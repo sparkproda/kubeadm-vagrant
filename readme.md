@@ -7,9 +7,11 @@ Vagrant를 사용하여 Virtualbox VM을 만들고 Ansible을 사용하여 Kuber
 - Vagrant
 - Ansible
 
+![kubeadm](./img/Vagrant_Ansible_Kubeadm.png)
+
 ## 01. Vagrant 사용하여 VirtualBox VM 생성
 
-VM의 OS, VM 개수 및 사양은 VagrantFile을 수정하여 생성합니다. 그리고 추가적으로 Vagrant는 Ansible를 호출하여 VM 생성 후 Ansible Playbook을 실행하여 패키지가 설치됩니다. Kubeadm 설치시 필요한 파일 공유를 위해서 로컬 Host와 sync 디렉토리를 Vagrant를 활용하여 생성합니다.
+VM의 OS, VM 개수 및 Spec은 VagrantFile을 수정하여 생성합니다. 그리고 추가적으로 Vagrant는 VM 생성한 후 Ansible Playbook을 실행하여 Kubernetes(using Kubeadm)가 설치되도록 하였습니다. Kubeadm 설치시 필요한 정보공유를 위해서 로컬 Host와 디렉토리가 mount되도록 Vagrant를 설정했습니다.
 
 
 ~~~
